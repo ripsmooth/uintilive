@@ -1,6 +1,12 @@
 <!doctype html>
 <html lang="fi">
 <head><meta charset="utf-8"><style>
+/* URL-skaalaus: ?scale=100 on nykyinen koko */
+#p {
+  transform: scale(var(--overlay-scale, 1));
+  transform-origin: top left;
+}
+
 html,body{
   width:100%;
   height:100%;
@@ -115,6 +121,12 @@ td{
 <script>
 const API_BASE='https://uintilive.vercel.app/';
 const competitionFromUrl=new URLSearchParams(window.location.search).get('competition');
+const scaleFromUrl=(() => {
+  const v=parseFloat(new URLSearchParams(window.location.search).get('scale') || '100');
+  return Number.isFinite(v) ? Math.min(300, Math.max(25, v)) : 100;
+})();
+document.documentElement.style.setProperty('--overlay-scale', String(scaleFromUrl / 100));
+
 
 function x(s) {
   return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
