@@ -3,6 +3,7 @@
 <head><meta charset="utf-8"><style>
 /* URL-skaalaus: ?scale=100 on nykyinen koko */
 #p {
+  width: calc(100% / var(--overlay-scale, 1));
   transform: scale(var(--overlay-scale, 1));
   transform-origin: top left;
 }
