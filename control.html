@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Swimify – eräohjaus</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#10141c;color:#f4f6fb;font:16px Arial,sans-serif;padding:24px}
+main{max-width:680px;margin:auto}h1{font-size:27px;margin:0 0 8px}.muted{color:#aeb8c8;line-height:1.5}
+.card{background:#1a2230;border:1px solid #303b4d;border-radius:14px;padding:20px;margin-top:18px}
+label{display:block;font-weight:bold;margin:14px 0 7px}input,select,button{font:inherit;border-radius:9px;padding:12px;width:100%;border:1px solid #46536a;background:#0f1520;color:#fff}
+button{cursor:pointer;background:#3478f6;border:0;font-weight:bold;margin-top:14px}button.secondary{background:#344155}button:disabled{opacity:.5}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.status{padding:12px;border-radius:9px;background:#0f1520;margin-top:14px;white-space:pre-wrap}.good{color:#85e6a5}.bad{color:#ff9999}
+small{color:#aeb8c8;line-height:1.5;display:block;margin-top:8px}
+@media(max-width:520px){body{padding:14px}.row{grid-template-columns:1fr}}
+</style></head><body><main>
+<h1>Swimify – eräohjaus</h1><div class="muted">Valitse automaattinen erä tai lukitse tulosgrafiikka tiettyyn erään. Ohjaus vaikuttaa kaikkiin samaa Vercel-projektia käyttäviin grafiikoihin.</div>
+<div class="card">
+<label for="token">Ohjauspaneelin tunnus</label><input id="token" type="password" autocomplete="current-password" placeholder="CONTROL_PANEL_TOKEN">
+<small>Tunnus on sama arvo, jonka asetat Vercelin Environment Variables -kohtaan.</small>
+<label for="mode">Ohjaustapa</label><select id="mode"><option value="auto">Automaattinen – aktiivinen erä</option><option value="manual">Käsiohjaus – valittu erä</option></select>
+<label for="heat">Erän ID</label><input id="heat" type="number" min="1" step="1" placeholder="Esim. 12345">
+<small>Erän ID löytyy Swimifyn datasta/API-vastauksesta. Käsiohjauksessa grafiikka näyttää tämän erän, vaikka toinen erä olisi aktiivinen.</small>
+<label for="competition">Kilpailun ID (valinnainen, tiedoksi)</label><input id="competition" type="text" placeholder="COMPETITION_ID">
+<div class="row"><button id="save">Tallenna ohjaus</button><button id="refresh" class="secondary">Päivitä tila</button></div>
+<div id="status" class="status">Haetaan nykyistä ohjaustilaa…</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+$('token').value=sessionStorage.getItem('swimifyControlToken')||'';
+function status(msg,good=true){$('status').textContent=msg;$('status').className='status '+(good?'good':'bad')}
+async function load(){
+ try{const r=await fetch('/api/control',{cache:'no-store'});const d=await r.json();if(!d.ok)throw Error(d.error||'Virhe');
+ const s=d.state||{};$('mode').value=s.mode||'auto';$('heat').value=s.heatId||'';$('competition').value=s.competitionId||'';
+ status('Nykyinen tila: '+(s.mode==='manual'?'Käsiohjaus, erä ID '+s.heatId:'Automaattinen erä')+(s.updatedAt?'\nPäivitetty: '+s.updatedAt:''),true);
+ }catch(e){status('Tilan haku epäonnistui: '+e.message,false)}
+}
+$('mode').addEventListener('change',()=>{$('heat').disabled=$('mode').value!=='manual'});
+$('save').onclick=async()=>{
+ const token=$('token').value.trim();if(!token){status('Anna ohjauspaneelin tunnus.',false);return}
+ if($('mode').value==='manual'&&!$('heat').value){status('Anna käsin valittavan erän ID.',false);return}
+ $('save').disabled=true;
+ try{
+ const r=await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json','x-control-token':token},body:JSON.stringify({mode:$('mode').value,heatId:$('heat').value,competitionId:$('competition').value})});
+ const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'Tallennus epäonnistui');
+ sessionStorage.setItem('swimifyControlToken',token);status('Tallennettu!\n'+(d.state.mode==='manual'?'Grafiikka käyttää nyt erää ID '+d.state.heatId+'.':'Grafiikka seuraa taas automaattisesti aktiivista erää.'),true);
+ }catch(e){status('Tallennus epäonnistui: '+e.message,false)}finally{$('save').disabled=false}
+};
+$('refresh').onclick=load;load();$('heat').disabled=$('mode').value!=='manual';
+</script></main></body></html>

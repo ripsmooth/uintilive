@@ -1,23 +1,44 @@
-# Swimify TV – GitHub Pages + Vercel proxy
+# Swimify TV – Vercel + GitHub Pages, käsiohjaus
 
-Tämä ratkaisee GitHub Pagesin CORS-ongelman. GitHub Pages näyttää grafiikan ja Vercel `/api/data` hakee Swimifyn GraphQL-datan palvelinpuolella.
+Paketissa on tulosgrafiikka (`index.html`), Vercelin API (`api/data.js`, `api/control.js`) ja erillinen käsiohjauspaneeli (`control.html`).
 
-## 1. Vercel
-1. Luo uusi Vercel-projekti tästä kansiosta.
-2. Lisää Environment Variables:
-   - `SWIMIFY_API_KEY` = alkuperäisen Swimify-version API-avain
-   - `COMPETITION_ID` = `0e7de999-e30c-48fe-9e6e-599eb2fe05aa`
-3. Deploy.
-4. Testaa selaimessa: `https://OMA-PROJEKTI.vercel.app/api/data`
-   Vastauksen pitäisi olla JSON ja sisältää `ok:true` tai ilmoitus aktiivisen erän puuttumisesta.
+## 1. Vercelin ympäristömuuttujat
 
-## 2. GitHub Pages
-Kopioi `github/index.html` GitHub Pages -repositoryyn.
-Muuta tiedoston alusta:
-`const API_BASE='https://VAIHDA-TAMA.vercel.app';`
-oman Vercel-projektisi osoitteeksi.
+Lisää Vercel-projektiin (Settings → Environment Variables):
 
-## 3. OBS
-Käytä OBS Browser Source -lähteenä GitHub Pages -osoitetta.
+- `SWIMIFY_API_KEY` – Swimifyn API-avain
+- `COMPETITION_ID` – kilpailun oletus-ID
+- `UPSTASH_REDIS_REST_URL` – Upstash Redis -tietokannan REST-osoite
+- `UPSTASH_REDIS_REST_TOKEN` – tietokannan REST-token
+- `CONTROL_PANEL_TOKEN` – oma pitkä, salainen ohjauspaneelin tunnus
 
-API-avain ei ole GitHubissa eikä selaimessa, vaan Vercelin Environment Variables -asetuksessa.
+Ohjauspaneelin ja grafiikan pitää jakaa sama tallennettu ohjaustila. Siksi tarvitaan Upstash Redis (Vercelin palvelinmuistin sisältöä ei voi luotettavasti käyttää tallennukseen). Luo Upstash Redis -tietokanta ja kopioi sen REST URL ja token Vercelin ympäristömuuttujiin. Älä laita Swimify- tai Redis-avaimia HTML-tiedostoon.
+
+Kun lisäät tai muutat ympäristömuuttujia, tee uusi deploy.
+
+## 2. Osoitteet
+
+Kun projekti on julkaistu esimerkiksi osoitteessa `https://OMA-PROJEKTI.vercel.app`:
+
+- Ohjauspaneeli: `https://OMA-PROJEKTI.vercel.app/control.html`
+- API:n testaus: `https://OMA-PROJEKTI.vercel.app/api/data`
+- Grafiikka: Vercelin osoite `/` tai julkaise `index.html` GitHub Pagesiin ja muuta tiedoston `API_BASE` osoittamaan Vercel-projektiin.
+
+## 3. Käyttö
+
+1. Avaa `control.html` ja syötä `CONTROL_PANEL_TOKEN`.
+2. Valitse **Automaattinen**, jos grafiikka seuraa aktiivista erää.
+3. Valitse **Käsiohjaus** ja syötä Swimifyn erän ID, jos haluat lukita grafiikan tiettyyn erään.
+4. Paina **Tallenna ohjaus**. Kaikki samaa API-projektia käyttävät grafiikat vaihtavat tilan noin sekunnin kuluessa.
+
+Erän ID on Swimifyn `heat.id`-arvo, ei erän järjestysnumero. Tämä versio tarjoaa käsin syötettävän erä-ID:n; se ei vielä hae kaikkien kilpailun erien luetteloa paneeliin.
+
+## 4. GitHub Pages ja OBS
+
+Jos grafiikka julkaistaan GitHub Pagesissa, muuta `index.html`-tiedostossa `API_BASE` oman Vercel-projektin osoitteeksi. Lisää CORS-sallittuihin alkuperiin `api/data.js`-tiedostossa GitHub Pages -sivusi tarkka origin, jos se poikkeaa nykyisestä `https://ripsmooth.github.io`-osoitteesta.
+
+OBS Browser Source käyttää grafiikan URL-osoitetta. Ohjauspaneeli avataan tavallisessa selaimessa erillisenä sivuna.
+
+## Huomio
+
+Ohjaustila tallentuu Upstash Redis -tietokantaan. Ilman Redis-ympäristömuuttujia käsiohjaus ei toimi ja API näyttää virheilmoituksen. Tunnus suojaa tilan muuttamisen; tilan lukeminen ei vaadi tunnusta.
