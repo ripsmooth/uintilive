@@ -80,8 +80,8 @@ async function readControl() {
   catch { return {mode:'auto',heatId:null,competitionId:DEFAULT_COMPETITION}; }
 }
 
-async function getAutoHeat() {
-  const d = await gql(currentQuery, {id:COMPETITION});
+async function getAutoHeat(competitionId) {
+  const d = await gql(currentQuery, {id:competitionId || DEFAULT_COMPETITION});
   const rows = Array.isArray(d.current_heat) ? d.current_heat : [];
   if (!rows.length) return null;
   const candidates = [];
