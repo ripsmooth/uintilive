@@ -18,7 +18,7 @@ small{color:#aeb8c8;line-height:1.5;display:block;margin-top:8px}
 <label for="mode">Ohjaustapa</label><select id="mode"><option value="auto">Automaattinen – aktiivinen erä</option><option value="manual">Käsiohjaus – valittu erä</option></select>
 <label for="heatSelect">Valitse erä kilpailun ohjelmasta</label>
 <select id="heatSelect"><option value="">Lataa erät painamalla alla olevaa painiketta</option></select>
-<div class="row"><button id="loadHeats" class="secondary" type="button">Hae kaikki erät</button><button id="nextHeat" class="secondary" type="button">Valitse seuraava erä</button></div>
+<div class="row"><button id="loadHeats" class="secondary" type="button">Hae kaikki erät</button><button id="nextHeat" class="secondary" type="button">Seuraava erä →</button></div>
 <label for="heat">Valitun erän ID (täytetään automaattisesti)</label><input id="heat" type="number" min="1" step="1" placeholder="Valitse erä listasta">
 <small>Erät haetaan kilpailun ohjelmasta järjestyksessä. Valitse listasta haluamasi erä; ID:tä ei tarvitse etsiä käsin.</small>
 <label for="competition">Kilpailun ID (valinnainen, tiedoksi)</label><input id="competition" type="text" placeholder="COMPETITION_ID">
@@ -62,7 +62,7 @@ $('nextHeat').addEventListener('click',()=>{
  if(!loadedHeats.length){loadHeats();return;}
  const current=String($('heatSelect').value||$('heat').value||'');
  const i=loadedHeats.findIndex(h=>String(h.id)===current);
- const next=loadedHeats[Math.min(i+1,loadedHeats.length-1)];
+ const next=loadedHeats[(i+1+loadedHeats.length)%loadedHeats.length];
  if(next){$('heatSelect').value=String(next.id);$('heat').value=String(next.id);$('mode').value='manual';status('Valittu seuraava erä: '+heatLabel(next),true);}
 });
 async function load(){
