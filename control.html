@@ -22,7 +22,7 @@ small{color:#aeb8c8;line-height:1.5;display:block;margin-top:8px}
 <label for="heat">Valitun erän ID (täytetään automaattisesti)</label><input id="heat" type="number" min="1" step="1" placeholder="Valitse erä listasta">
 <small>Erät haetaan kilpailun ohjelmasta järjestyksessä. Valitse listasta haluamasi erä; ID:tä ei tarvitse etsiä käsin.</small>
 <label for="competition">Kilpailun ID (valinnainen, tiedoksi)</label><input id="competition" type="text" placeholder="COMPETITION_ID">
-<div class="row"><button id="save">Tallenna ohjaus</button><button id="refresh" class="secondary">Päivitä tila</button></div>
+<div class="row"><button id="save">Tallenna ohjaus</button><button id="nextSave" type="button">Seuraava erä ja tallenna ohjaus</button></div><button id="refresh" class="secondary" type="button">Päivitä tila</button>
 <div id="status" class="status">Haetaan nykyistä ohjaustilaa…</div>
 </div>
 <script>
@@ -58,12 +58,26 @@ async function loadHeats(selectId){
 }
 $('heatSelect').addEventListener('change',()=>{$('heat').value=$('heatSelect').value; if($('heatSelect').value) $('mode').value='manual';});
 $('loadHeats').addEventListener('click',()=>loadHeats());
-$('nextHeat').addEventListener('click',()=>{
- if(!loadedHeats.length){loadHeats();return;}
+function selectNextHeat(){
+ if(!loadedHeats.length){status('Erälista ei ole vielä ladattu. Haetaan erät ensin…',true);return false;}
  const current=String($('heatSelect').value||$('heat').value||'');
  const i=loadedHeats.findIndex(h=>String(h.id)===current);
  const next=loadedHeats[(i+1+loadedHeats.length)%loadedHeats.length];
- if(next){$('heatSelect').value=String(next.id);$('heat').value=String(next.id);$('mode').value='manual';status('Valittu seuraava erä: '+heatLabel(next),true);}
+ if(!next)return false;
+ $('heatSelect').value=String(next.id);$('heat').value=String(next.id);$('mode').value='manual';$('heat').disabled=false;
+ status('Valittu seuraava erä: '+heatLabel(next),true);return true;
+}
+$('nextHeat').addEventListener('click',()=>{
+ if(!loadedHeats.length){loadHeats().then(()=>{if(loadedHeats.length)selectNextHeat();});return;}
+ selectNextHeat();
+});
+$('nextSave').addEventListener('click',async()=>{
+ if(!loadedHeats.length){
+  await loadHeats();
+  if(!loadedHeats.length)return;
+ }
+ if(!selectNextHeat())return;
+ await saveControl();
 });
 async function load(){
  try{const r=await fetch('/api/control',{cache:'no-store'});const d=await r.json();if(!d.ok)throw Error(d.error||'Virhe');
@@ -72,15 +86,16 @@ async function load(){
  }catch(e){status('Tilan haku epäonnistui: '+e.message,false)}
 }
 $('mode').addEventListener('change',()=>{$('heat').disabled=$('mode').value!=='manual'});
-$('save').onclick=async()=>{
+async function saveControl(){
  const token=$('token').value.trim();if(!token){status('Anna ohjauspaneelin tunnus.',false);return}
  if($('mode').value==='manual'&&!$('heat').value){status('Anna käsin valittavan erän ID.',false);return}
- $('save').disabled=true;
+ $('save').disabled=true;$('nextSave').disabled=true;
  try{
  const r=await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json','x-control-token':token},body:JSON.stringify({mode:$('mode').value,heatId:$('heat').value,competitionId:$('competition').value})});
  const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'Tallennus epäonnistui');
  sessionStorage.setItem('swimifyControlToken',token);status('Tallennettu!\n'+(d.state.mode==='manual'?'Grafiikka käyttää nyt erää ID '+d.state.heatId+'.':'Grafiikka seuraa taas automaattisesti aktiivista erää.'),true);
- }catch(e){status('Tallennus epäonnistui: '+e.message,false)}finally{$('save').disabled=false}
-};
+ }catch(e){status('Tallennus epäonnistui: '+e.message,false)}finally{$('save').disabled=false;$('nextSave').disabled=false}
+}
+$('save').onclick=saveControl;
 $('refresh').onclick=load;load().then(()=>loadHeats($('heat').value));$('heat').disabled=$('mode').value!=='manual';
 </script></main></body></html>
