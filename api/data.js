@@ -2,6 +2,10 @@ const ENDPOINT = 'https://data-eu.swimify.com/v1/graphql';
 const DEFAULT_COMPETITION = process.env.COMPETITION_ID || '0e7de999-e30c-48fe-9e6e-599eb2fe05aa';
 const KEY = process.env.SWIMIFY_API_KEY;
 
+let lastHeatId = null;
+let lastEventId = null;
+let lastRoundId = null;
+
 const currentQuery = `query currentHeatIdsQuery_WL($id: uuid!) {
   current_heat(where: {competition_id: {_eq: $id}}) {
     heat_type
@@ -37,89 +41,108 @@ const heatQuery = `query heatByIdQuery_WL($id: Int!) {
   }
 }`;
 
+const nearbyQuery = `query nearbyHeats($startId:Int!) {
+  heat(where:{id:{_gte:$startId}} order_by:{id:asc} limit:12) {
+    id number status
+    time_program_entry { round { id event { id number name } } }
+  }
+}`;
+
 async function gql(query, variables) {
   if (!KEY) throw new Error('SWIMIFY_API_KEY puuttuu Vercelin Environment Variables -asetuksista.');
-
-  const response = await fetch(ENDPOINT, {
+  const r = await fetch(ENDPOINT, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-hasura-public-secret-key': KEY
+      'x-hasura-public-secret-key': KEY,
+      'origin': 'https://live.swimify.com',
+      'referer': 'https://live.swimify.com/'
     },
     body: JSON.stringify({query, variables})
   });
-
-  const body = await response.text();
-  let json;
-  try { json = JSON.parse(body); }
-  catch (_) { throw new Error(`Swimify HTTP ${response.status}: vastaus ei ole JSONia.`); }
-
-  if (!response.ok) throw new Error(`Swimify HTTP ${response.status}`);
-  if (Array.isArray(json.errors) && json.errors.length) {
-    throw new Error(json.errors.map(x => x.message).join('; '));
-  }
-  return json.data;
+  const text = await r.text();
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error(`Swimify HTTP ${r.status}: ${text.slice(0,300)}`); }
+  if (!r.ok) throw new Error(`Swimify HTTP ${r.status}: ${data?.errors?.map(x=>x.message).join('; ') || 'virhe'}`);
+  if (data.errors?.length) throw new Error(data.errors.map(x=>x.message).join('; '));
+  return data.data;
 }
 
-async function getHeat(id) {
-  const data = await gql(heatQuery, {id:Number(id)});
-  return data?.heat_by_pk || null;
+async function getHeat(id) { return (await gql(heatQuery, {id:Number(id)})).heat_by_pk; }
+
+async function readControl() {
+  const url=process.env.UPSTASH_REDIS_REST_URL, token=process.env.UPSTASH_REDIS_REST_TOKEN;
+  if(!url || !token) return {mode:'auto', heatId:null, competitionId:DEFAULT_COMPETITION};
+  const r=await fetch(url.replace(/\/$/,'')+'/get/swimify_manual_control',{headers:{Authorization:'Bearer '+token}});
+  if(!r.ok) throw new Error('Ohjaustilan lukeminen epäonnistui (Upstash Redis).');
+  const d=await r.json();
+  try { return d.result ? JSON.parse(d.result) : {mode:'auto',heatId:null,competitionId:DEFAULT_COMPETITION}; }
+  catch { return {mode:'auto',heatId:null,competitionId:DEFAULT_COMPETITION}; }
 }
 
-async function getAutoHeat(competitionId) {
-  const data = await gql(currentQuery, {id:competitionId});
-  const rows = Array.isArray(data?.current_heat) ? data.current_heat : [];
+async function getAutoHeat() {
+  const d = await gql(currentQuery, {id:COMPETITION});
+  const rows = Array.isArray(d.current_heat) ? d.current_heat : [];
+  if (!rows.length) return null;
   const candidates = [];
-
   for (const row of rows) {
     if (!row?.heat?.id) continue;
+    try { const h = await getHeat(row.heat.id); if (h) candidates.push(h); } catch (_) {}
+  }
+  if (!candidates.length) return null;
+
+  if (lastHeatId) {
+    const same = candidates.find(h => Number(h.id) === Number(lastHeatId));
+    if (same) return same;
+  }
+
+  if (lastHeatId && lastEventId && lastRoundId) {
     try {
-      const heat = await getHeat(row.heat.id);
-      if (heat) candidates.push(heat);
+      const near = await gql(nearbyQuery, {startId:Number(lastHeatId)+1});
+      for (const n of (near.heat || [])) {
+        const ev=n?.time_program_entry?.round?.event;
+        const rd=n?.time_program_entry?.round;
+        if (Number(ev?.id)===Number(lastEventId) && Number(rd?.id)===Number(lastRoundId) && Number(n.id)>Number(lastHeatId)) {
+          const h=await getHeat(n.id); if(h) return h;
+        }
+      }
     } catch (_) {}
   }
 
-  if (!candidates.length) return null;
-
-  const running = candidates.filter(h =>
-    /RUN|SWIM|START|ACTIVE|IN_PROGRESS|INPROGRESS/i.test(String(h.status || ''))
-  );
-
-  if (running.length) return running.sort((a,b) => Number(a.id)-Number(b.id))[0];
-  return candidates.sort((a,b) => Number(b.id)-Number(a.id))[0];
+  const running = candidates.filter(h => /RUN|SWIM|START|ACTIVE|IN_PROGRESS|INPROGRESS/i.test(String(h.status||'')));
+  if (running.length) return running.sort((a,b)=>Number(a.id)-Number(b.id))[0];
+  if (candidates.length===1) return candidates[0];
+  const greater=candidates.filter(h=>Number(h.id)>Number(lastHeatId||-Infinity)).sort((a,b)=>Number(a.id)-Number(b.id));
+  if(greater.length) return greater[0];
+  return candidates.sort((a,b)=>Number(b.id)-Number(a.id))[0];
 }
 
-export default async function handler(req, res) {
+module.exports = async (req,res) => {
   const origin = req.headers.origin || '';
-  res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'GET') return res.status(405).json({ok:false,error:'Method not allowed'});
-
+  const allowed = origin === 'https://ripsmooth.github.io' || /^https?:\/\/localhost(?::\d+)?$/.test(origin);
+  if (allowed) res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary','Origin');
+  res.setHeader('Access-Control-Allow-Methods','GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers','Content-Type');
+  res.setHeader('Cache-Control','no-store');
+  if(req.method==='OPTIONS') return res.status(204).end();
+  if(req.method!=='GET') return res.status(405).json({ok:false,error:'Method not allowed'});
   try {
-    const url = new URL(req.url, 'https://uintilive.vercel.app');
-    const competitionId = url.searchParams.get('competition')?.trim() || DEFAULT_COMPETITION;
-
-    const heat = await getAutoHeat(competitionId);
-
-    if (!heat) {
-      return res.status(200).json({
-        ok:true,
-        message:'Aktiivista erää ei löytynyt juuri nyt.',
-        heat:null
-      });
+    const control=await readControl();
+    const requestedCompetition=String(req.query?.competition || control.competitionId || DEFAULT_COMPETITION);
+    let h=null;
+    if(control.mode==='manual' && control.heatId) {
+      h=await getHeat(control.heatId);
+      if(!h) return res.status(200).json({ok:true,message:'Valittua erää ei löytynyt.',heat:null,mode:'manual'});
+    } else {
+      h=await getAutoHeat(requestedCompetition);
     }
-
-    return res.status(200).json({ok:true,message:'OK',heat});
-  } catch (e) {
-    return res.status(502).json({
-      ok:false,
-      error:e?.message || 'Tuntematon palvelinvirhe'
-    });
+    if(!h) return res.status(200).json({ok:true,message:'Aktiivista erää ei löytynyt juuri nyt.',heat:null,mode:control.mode});
+    lastHeatId=Number(h.id);
+    lastRoundId=Number(h?.time_program_entry?.round?.id)||null;
+    lastEventId=Number(h?.time_program_entry?.round?.event?.id)||null;
+    return res.status(200).json({ok:true,message:'OK',heat:h,mode:control.mode});
+  } catch(e) {
+    return res.status(502).json({ok:false,error:e.message});
   }
-}
+};
