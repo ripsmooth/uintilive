@@ -16,8 +16,11 @@ small{color:#aeb8c8;line-height:1.5;display:block;margin-top:8px}
 <label for="token">Ohjauspaneelin tunnus</label><input id="token" type="password" autocomplete="current-password" placeholder="CONTROL_PANEL_TOKEN">
 <small>Tunnus on sama arvo, jonka asetat Vercelin Environment Variables -kohtaan.</small>
 <label for="mode">Ohjaustapa</label><select id="mode"><option value="auto">Automaattinen – aktiivinen erä</option><option value="manual">Käsiohjaus – valittu erä</option></select>
-<label for="heat">Erän ID</label><input id="heat" type="number" min="1" step="1" placeholder="Esim. 12345">
-<small>Erän ID löytyy Swimifyn datasta/API-vastauksesta. Käsiohjauksessa grafiikka näyttää tämän erän, vaikka toinen erä olisi aktiivinen.</small>
+<label for="heatSelect">Valitse erä kilpailun ohjelmasta</label>
+<select id="heatSelect"><option value="">Lataa erät painamalla alla olevaa painiketta</option></select>
+<div class="row"><button id="loadHeats" class="secondary" type="button">Hae kaikki erät</button><button id="nextHeat" class="secondary" type="button">Valitse seuraava erä</button></div>
+<label for="heat">Valitun erän ID (täytetään automaattisesti)</label><input id="heat" type="number" min="1" step="1" placeholder="Valitse erä listasta">
+<small>Erät haetaan kilpailun ohjelmasta järjestyksessä. Valitse listasta haluamasi erä; ID:tä ei tarvitse etsiä käsin.</small>
 <label for="competition">Kilpailun ID (valinnainen, tiedoksi)</label><input id="competition" type="text" placeholder="COMPETITION_ID">
 <div class="row"><button id="save">Tallenna ohjaus</button><button id="refresh" class="secondary">Päivitä tila</button></div>
 <div id="status" class="status">Haetaan nykyistä ohjaustilaa…</div>
@@ -26,6 +29,42 @@ small{color:#aeb8c8;line-height:1.5;display:block;margin-top:8px}
 const $=id=>document.getElementById(id);
 $('token').value=sessionStorage.getItem('swimifyControlToken')||'';
 function status(msg,good=true){$('status').textContent=msg;$('status').className='status '+(good?'good':'bad')}
+let loadedHeats=[];
+function heatLabel(h){
+ const event=[h.eventNumber ? '#'+h.eventNumber : '',h.eventName].filter(Boolean).join(' ');
+ const round=h.roundName||h.programName||'';
+ const heatNo=h.number!=null?'Erä '+h.number:(h.name||('ID '+h.id));
+ const time=h.estimated_start_time||h.start_time;
+ const timeText=time ? ' · '+String(time).replace('T',' ').slice(0,16) : '';
+ return [event,round,heatNo].filter(Boolean).join(' — ')+timeText+' [ID '+h.id+']';
+}
+async function loadHeats(selectId){
+ const competition=$('competition').value.trim();
+ $('loadHeats').disabled=true;status('Haetaan kilpailun eriä Swimifystä…',true);
+ try{
+  const url='/api/heats'+(competition?'?competition='+encodeURIComponent(competition):'');
+  const r=await fetch(url,{cache:'no-store'});const d=await r.json();
+  if(!r.ok||!d.ok) throw Error(d.error||'Erälistan haku epäonnistui');
+  loadedHeats=d.heats||[];
+  const sel=$('heatSelect');sel.innerHTML='';
+  if(!loadedHeats.length){sel.add(new Option('Kilpailusta ei löytynyt eriä',''));$('heat').value='';status('Kilpailusta ei löytynyt eriä. Tarkista kilpailun ID ja Swimify-yhteys.',false);return;}
+  sel.add(new Option('Valitse erä ('+loadedHeats.length+' kpl)',''));
+  loadedHeats.forEach(h=>sel.add(new Option(heatLabel(h),String(h.id))));
+  const wanted=selectId==null?String($('heat').value||''):String(selectId);
+  if(wanted && loadedHeats.some(h=>String(h.id)===wanted)) sel.value=wanted;
+  if(sel.value) $('heat').value=sel.value;
+  status('Erälista ladattu: '+loadedHeats.length+' erää järjestyksessä. Valitse erä listasta.',true);
+ }catch(e){status(e.message,false)}finally{$('loadHeats').disabled=false}
+}
+$('heatSelect').addEventListener('change',()=>{$('heat').value=$('heatSelect').value; if($('heatSelect').value) $('mode').value='manual';});
+$('loadHeats').addEventListener('click',()=>loadHeats());
+$('nextHeat').addEventListener('click',()=>{
+ if(!loadedHeats.length){loadHeats();return;}
+ const current=String($('heatSelect').value||$('heat').value||'');
+ const i=loadedHeats.findIndex(h=>String(h.id)===current);
+ const next=loadedHeats[Math.min(i+1,loadedHeats.length-1)];
+ if(next){$('heatSelect').value=String(next.id);$('heat').value=String(next.id);$('mode').value='manual';status('Valittu seuraava erä: '+heatLabel(next),true);}
+});
 async function load(){
  try{const r=await fetch('/api/control',{cache:'no-store'});const d=await r.json();if(!d.ok)throw Error(d.error||'Virhe');
  const s=d.state||{};$('mode').value=s.mode||'auto';$('heat').value=s.heatId||'';$('competition').value=s.competitionId||'';
@@ -43,5 +82,5 @@ $('save').onclick=async()=>{
  sessionStorage.setItem('swimifyControlToken',token);status('Tallennettu!\n'+(d.state.mode==='manual'?'Grafiikka käyttää nyt erää ID '+d.state.heatId+'.':'Grafiikka seuraa taas automaattisesti aktiivista erää.'),true);
  }catch(e){status('Tallennus epäonnistui: '+e.message,false)}finally{$('save').disabled=false}
 };
-$('refresh').onclick=load;load();$('heat').disabled=$('mode').value!=='manual';
+$('refresh').onclick=load;load().then(()=>loadHeats($('heat').value));$('heat').disabled=$('mode').value!=='manual';
 </script></main></body></html>
