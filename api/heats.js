@@ -5,7 +5,7 @@ const KEY = process.env.SWIMIFY_API_KEY;
 const heatsQuery = `query competitionHeats($competitionId: uuid!) {
   heat(
     where: {time_program_entry: {round: {event: {competition_id: {_eq: $competitionId}}}}}
-    order_by: [{id: asc}]
+    order_by: [{time_program_entry: {round: {event: {number: asc}}}}, {number: asc}, {id: asc}]
     limit: 1000
   ) {
     id name number status estimated_start_time start_time
@@ -57,6 +57,21 @@ module.exports = async (req, res) => {
       roundName: h.time_program_entry?.round?.name || '',
       programName: h.time_program_entry?.name || ''
     }));
+    // Järjestä ohjelman tapahtumanumeron ja eränumeron mukaan, älä tietokannan ID:n mukaan.
+    // ID:t eivät välttämättä kulje samassa järjestyksessä kuin kilpailun erät.
+    heats.sort((a, b) => {
+      const eventA = Number(a.eventNumber) || Number.MAX_SAFE_INTEGER;
+      const eventB = Number(b.eventNumber) || Number.MAX_SAFE_INTEGER;
+      if (eventA !== eventB) return eventA - eventB;
+      const roundA = String(a.roundName || a.programName || '');
+      const roundB = String(b.roundName || b.programName || '');
+      const roundCmp = roundA.localeCompare(roundB, 'fi', {numeric:true, sensitivity:'base'});
+      if (roundCmp !== 0) return roundCmp;
+      const numberA = a.number == null ? Number.MAX_SAFE_INTEGER : Number(a.number);
+      const numberB = b.number == null ? Number.MAX_SAFE_INTEGER : Number(b.number);
+      if (numberA !== numberB) return numberA - numberB;
+      return Number(a.id) - Number(b.id);
+    });
     return res.status(200).json({ok:true,competitionId,heats});
   } catch (e) {
     return res.status(502).json({ok:false,error:`Erälistan haku epäonnistui: ${e.message}`});
