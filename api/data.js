@@ -55,6 +55,7 @@ async function gql(query, variables) {
     headers: {
       'content-type': 'application/json',
       'x-hasura-public-secret-key': KEY,
+      'hasura-client-name': 'Swimify Web',
       'origin': 'https://live.swimify.com',
       'referer': 'https://live.swimify.com/'
     },
