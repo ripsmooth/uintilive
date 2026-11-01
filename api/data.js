@@ -50,20 +50,33 @@ const nearbyQuery = `query nearbyHeats($startId:Int!) {
 
 async function gql(query, variables) {
   if (!KEY) throw new Error('SWIMIFY_API_KEY puuttuu Vercelin Environment Variables -asetuksista.');
+
+  const headers = {
+    'content-type': 'application/json',
+    'x-hasura-public-secret-key': KEY,
+    'hasura-client-name': 'Swimify Web',
+    'origin': 'https://live.swimify.com',
+    'referer': 'https://live.swimify.com/'
+  };
+
+  if (process.env.CF_CLEARANCE) {
+    headers.cookie = `cf_clearance=${process.env.CF_CLEARANCE}`;
+  }
+
   const r = await fetch(ENDPOINT, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-hasura-public-secret-key': KEY,
-      'hasura-client-name': 'Swimify Web',
-      'origin': 'https://live.swimify.com',
-      'referer': 'https://live.swimify.com/'
-    },
+    headers,
     body: JSON.stringify({query, variables})
   });
+
   const text = await r.text();
   let data;
-  try { data = JSON.parse(text); } catch { throw new Error(`Swimify HTTP ${r.status}: ${text.slice(0,300)}`); }
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Swimify HTTP ${r.status}: ${text.slice(0,300)}`);
+  }
+
   if (!r.ok) throw new Error(`Swimify HTTP ${r.status}: ${data?.errors?.map(x=>x.message).join('; ') || 'virhe'}`);
   if (data.errors?.length) throw new Error(data.errors.map(x=>x.message).join('; '));
   return data.data;
