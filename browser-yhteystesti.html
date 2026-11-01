@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Swimify – selainyhteyden testi</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:22px;background:#10141c;color:#f4f6fb;font:16px Arial,sans-serif}
+main{max-width:760px;margin:auto}.card{background:#1a2230;border:1px solid #303b4d;border-radius:12px;padding:18px;margin:16px 0}
+label{display:block;font-weight:bold;margin:14px 0 6px}input,button{width:100%;padding:12px;border-radius:8px;border:1px solid #46536a;background:#0f1520;color:#fff;font:inherit}
+button{background:#3478f6;border:0;font-weight:bold;cursor:pointer;margin-top:14px}button:disabled{opacity:.6}
+small,.muted{color:#aeb8c8;line-height:1.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0b1018;padding:12px;border-radius:8px;min-height:90px}
+.good{color:#85e6a5}.bad{color:#ff9999}.warn{color:#ffd27a}
+</style></head><body><main>
+<h1>Swimify – selainyhteyden testi</h1>
+<p class="muted">Tämä on erillinen testisivu. Se ei muuta nykyistä grafiikkaa eikä ohjauspaneelia. Testi yrittää tehdä GraphQL-pyynnön suoraan selaimesta Swimifyn rajapintaan.</p>
+<div class="card">
+<label for="key">Swimify API-avain</label>
+<input id="key" type="password" autocomplete="off" placeholder="Liitä API-avain tähän vain testin ajaksi">
+<small>Avain käsitellään vain tämän sivun muistissa. Sitä ei tallenneta eikä lähetetä muualle kuin Swimifyn GraphQL-osoitteeseen. Älä lisää avainta GitHub-koodiin.</small>
+<label for="competition">Kilpailun ID</label>
+<input id="competition" value="a88355c2-71dd-4c07-937b-15f8cf949c06">
+<button id="test">Testaa suora selainyhteys</button>
+</div>
+<div class="card"><strong id="result">Testiä ei ole vielä tehty.</strong><pre id="details">Odottaa testiä…</pre></div>
+<div class="card muted"><strong>Miten tulosta tulkitaan?</strong><ul>
+<li><span class="good">HTTP 200 ja JSON-vastaus:</span> selain pystyy hakemaan tiedot suoraan. Sen jälkeen voidaan rakentaa erillinen selainpohjainen grafiikkatesti.</li>
+<li><span class="bad">CORS-virhe:</span> Swimify ei salli pyyntöä GitHub Pages -sivun alkuperästä. Selainpohjainen grafiikka ei silloin voi hakea tietoja suoraan tältä sivulta.</li>
+<li><span class="bad">HTTP 403 / Cloudflare:</span> myös selaimesta tehty pyyntö estyy tällä sivun alkuperällä.</li>
+</ul></div>
+<script>
+const ENDPOINT='https://data-eu.swimify.com/v1/graphql';
+const query=`query browserConnectionTest($id: uuid!) { current_heat(where: {competition_id: {_eq: $id}}) { heat_type heat { id status } } }`;
+const $=id=>document.getElementById(id);
+$('test').addEventListener('click',async()=>{
+ const key=$('key').value.trim(), competition=$('competition').value.trim();
+ if(!key){$('result').textContent='API-avain puuttuu.';$('result').className='bad';return;}
+ if(!competition){$('result').textContent='Kilpailun ID puuttuu.';$('result').className='bad';return;}
+ $('test').disabled=true;$('result').textContent='Testataan…';$('result').className='';$('details').textContent='Lähetetään pyyntö suoraan Swimifylle…';
+ try{
+  const r=await fetch(ENDPOINT,{method:'POST',mode:'cors',credentials:'include',headers:{'content-type':'application/json','x-hasura-public-secret-key':key,'hasura-client-name':'Swimify Web','origin':'https://live.swimify.com','referer':'https://live.swimify.com/'},body:JSON.stringify({query,variables:{id:competition}}),cache:'no-store'});
+  const raw=await r.text();let parsed;try{parsed=JSON.parse(raw)}catch{parsed=null}
+  $('result').textContent='HTTP '+r.status+' '+r.statusText;$('result').className=r.ok?'good':'bad';
+  $('details').textContent=parsed?JSON.stringify(parsed,null,2):raw.slice(0,2500);
+ }catch(e){
+  $('result').textContent='Selain ei saanut vastausta Swimifyltä.';$('result').className='bad';
+  $('details').textContent=String(e)+'\n\nTämä on usein CORS-eston merkki: selain ei anna sivun lukea toisen verkkotunnuksen vastausta. Varsinainen palvelinvirhe ei välttämättä näy JavaScriptille.';
+ }finally{$('test').disabled=false;$('key').value='';}
+});
+</script></main></body></html>
