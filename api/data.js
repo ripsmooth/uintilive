@@ -1,5 +1,5 @@
 const ENDPOINT = 'https://data-eu.swimify.com/v1/graphql';
-const DEFAULT_COMPETITION = process.env.COMPETITION_ID || '0e7de999-e30c-48fe-9e6e-599eb2fe05aa';
+const DEFAULT_COMPETITION = process.env.COMPETITION_ID || 'a88355c2-71dd-4c07-937b-15f8cf949c06';
 const KEY = process.env.SWIMIFY_API_KEY;
 
 let lastHeatId = null;
